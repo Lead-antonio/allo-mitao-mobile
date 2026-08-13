@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "1063911935488",
+    "project_id": "allo-mitao-mobile",
+    "storage_bucket": "allo-mitao-mobile.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1063911935488:android:06538aff20c2f6cf8812e5",
+        "android_client_info": {
+          "package_name": "com.ewsmitao.allo_mitao_mobile"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAnrkcLWGo-HI0QBxCY_oM9wvSQ2aRdE1A"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

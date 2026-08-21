@@ -35,6 +35,8 @@ class NetworkService : Service() {
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel()
+        createAckNotificationChannel()          // ← nouveau
+
         Log.i(tag, "Service créé")
     }
 
@@ -62,8 +64,10 @@ class NetworkService : Service() {
         // SmsQueue.start() est idempotent si la boucle tourne déjà.
         // Mais s'il a été tué, cela recrée un nouveau Job proprement.
         SmsQueue.start()
-
         ServerApiService(applicationContext).ensureAudioDirExists()
+
+        // ── NOUVEAU : détecter une lecture coupée pendant que le service était mort ──
+        PlaybackCheckpoint.recoverIfNeeded(applicationContext)
 
         if (httpServer == null || !httpServer!!.isAlive) {
             try {
@@ -122,4 +126,19 @@ class NetworkService : Service() {
         getSystemService(NotificationManager::class.java)
             .createNotificationChannel(channel)
     }
+
+    private fun createAckNotificationChannel() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channel = NotificationChannel(
+                "playback_ack_channel",
+                "Accusés de diffusion",
+                NotificationManager.IMPORTANCE_LOW
+            ).apply {
+                description = "Confirmation d'envoi des accusés de lecture vers le serveur"
+            }
+            getSystemService(NotificationManager::class.java)
+                .createNotificationChannel(channel)
+        }
+    }
+
 }

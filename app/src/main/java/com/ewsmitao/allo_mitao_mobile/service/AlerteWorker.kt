@@ -20,6 +20,7 @@ class AlerteWorker(
         val boucleNext    = inputData.getInt(KEY_BOUCLE_NEXT, 1)
         val audioPath     = inputData.getString(KEY_AUDIO_PATH)  ?: ""
         val priority      = inputData.getInt(KEY_PRIORITY, 2)
+        val notifId       = inputData.getLong(KEY_NOTIF_ID, -1L).takeIf { it != -1L }   // ← nouveau
 
         Log.i("AlerteWorker", "⏰ Reprise après redémarrage/délai : $idWeb boucle $boucleNext/$nbrBoucle [P$priority]")
 
@@ -34,7 +35,8 @@ class AlerteWorker(
             nbrBoucle      = nbrBoucle,
             intervalleMin  = intervalleMin,
             boucleActuelle = boucleNext,
-            audioPath      = audioPath
+            audioPath      = audioPath,
+            notifId        = notifId // ← nouveau
         )
 
         // S'assurer que la file est démarrée (cas de redémarrage du téléphone)
@@ -53,5 +55,6 @@ class AlerteWorker(
         const val KEY_BOUCLE_NEXT    = "boucle_next"
         const val KEY_AUDIO_PATH     = "audio_path"
         const val KEY_PRIORITY       = "priority"
+        const val KEY_NOTIF_ID       = "notif_id"   // ← nouveau
     }
 }

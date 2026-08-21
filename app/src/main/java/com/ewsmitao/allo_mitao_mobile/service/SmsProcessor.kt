@@ -48,8 +48,6 @@ class SmsProcessor(private val context: Context) {
     // ── Point d'entrée depuis SmsQueue ────────────────────────────────────────
     suspend fun processCommand(cmd: SmsQueue.SmsCommand): Unit = withContext(Dispatchers.IO) {
 
-        // [MODIFIÉ] Vérification whitelist uniquement pour les SMS (pas pour FCM)
-        // Les commandes FCM ont sender = "FCM_SERVER" → bypass whitelist
         val isFcmCommand = cmd.sender == "FCM_SERVER" || cmd.sender.startsWith("FCM_")
         if (!isFcmCommand) {
             val allowed: Boolean = db.whitelistDao().isAllowed(cmd.sender) > 0
@@ -60,33 +58,50 @@ class SmsProcessor(private val context: Context) {
             }
         }
 
-        // 1. Vérifier que le son demandé existe en DB
         val audio = db.alerteAudioDao().getByIdWeb(cmd.idWeb)
         if (audio == null) {
             Log.w(tag, "❌ Son introuvable : ${cmd.idWeb}")
             saveHistory(cmd.sender, "NOT_FOUND", cmd.idWeb)
+            PlaybackAckService.sendAsync(cmd.idWeb, cmd.notifId, "failed", "audio_not_found_in_db") { ackSent ->
+                AckNotificationHelper.show(context, cmd.idWeb, success = false, detail = "son introuvable en base")
+            }
             return@withContext
         }
 
-        // 2. Vérifier que le fichier audio est présent sur le stockage
         val audioFile: File = File(audioDir, audio.audio)
         if (!audioFile.exists()) {
             Log.w(tag, "❌ Fichier introuvable : ${audioFile.absolutePath}")
             saveHistory(cmd.sender, "FAIL", cmd.idWeb)
+            PlaybackAckService.sendAsync(cmd.idWeb, cmd.notifId, "failed", "audio_file_missing") { ackSent ->
+                AckNotificationHelper.show(context, cmd.idWeb, success = false, detail = "fichier audio manquant")
+            }
             return@withContext
         }
 
-        // Choisir l'intro selon le type : ALT_ → sirène, sinon annonce
         val isAlerte: Boolean = cmd.idWeb.startsWith("ALT_", ignoreCase = true)
         val introResId: Int   = if (isAlerte) R.raw.sirene else R.raw.annonce
         val volume: Float     = volumeManager.getVolume()
 
-        // 3. Jouer l'intro puis le son principal
         Log.i(tag, "🔊 [P${cmd.priority}] ${cmd.idWeb} boucle ${cmd.boucleActuelle}/${cmd.nbrBoucle} [source: ${cmd.sender}]")
+
+        PlaybackAckService.sendAsync(cmd.idWeb, cmd.notifId, "playing")
+
         playRawAudio(introResId, volume)
+
         Log.i(tag, "AUDIO FILE SOURCE: ${audioFile.absolutePath}")
-        playFileAudio(audioFile, volume)
-        Log.i(tag, "✅ Boucle ${cmd.boucleActuelle}/${cmd.nbrBoucle} terminée")
+        val success = playFileAudio(audioFile, volume)
+
+        if (success) {
+            Log.i(tag, "✅ Boucle ${cmd.boucleActuelle}/${cmd.nbrBoucle} terminée")
+        } else {
+            Log.w(tag, "❌ Échec lecture boucle ${cmd.boucleActuelle}/${cmd.nbrBoucle} : ${cmd.idWeb}")
+            PlaybackAckService.sendAsync(cmd.idWeb,cmd.notifId, "failed", "media_player_error") { ackSent ->
+                AckNotificationHelper.show(
+                    context, cmd.idWeb, success = false,
+                    detail = if (ackSent) "lecture échouée (accusé transmis)" else "lecture échouée + accusé non transmis"
+                )
+            }
+        }
 
         // 4. Gérer les boucles suivantes
         if (cmd.boucleActuelle < cmd.nbrBoucle) {
@@ -122,9 +137,16 @@ class SmsProcessor(private val context: Context) {
 
         } else {
             Log.i(tag, "🏁 Terminé : ${cmd.idWeb}")
-            saveHistory(cmd.sender, "SUCCESS", cmd.idWeb)
+            saveHistory(cmd.sender, if (success) "SUCCESS" else "FAIL", cmd.idWeb)   // ← corrigé
+            if (success) {
+                PlaybackAckService.sendAsync(cmd.idWeb, cmd.notifId, "played") { ackSent ->
+                    AckNotificationHelper.show(context, cmd.idWeb, success = ackSent)
+                }
+            }
+            // le "failed" a déjà été envoyé plus haut avec sa propre notification si !success
         }
     }
+
 
     private fun scheduleNextBoucleWorkManager(cmd: SmsQueue.SmsCommand, delayMs: Long) {
         val workData: Data = workDataOf(
@@ -134,7 +156,8 @@ class SmsProcessor(private val context: Context) {
             AlerteWorker.KEY_INTERVALLE_MIN to cmd.intervalleMin,
             AlerteWorker.KEY_BOUCLE_NEXT    to (cmd.boucleActuelle + 1),
             AlerteWorker.KEY_AUDIO_PATH     to cmd.audioPath,
-            AlerteWorker.KEY_PRIORITY       to cmd.priority
+            AlerteWorker.KEY_PRIORITY       to cmd.priority,
+            AlerteWorker.KEY_NOTIF_ID       to (cmd.notifId ?: -1L)   // ← nouveau,
         )
         val work = OneTimeWorkRequestBuilder<AlerteWorker>()
             .setInputData(workData)
@@ -221,28 +244,27 @@ class SmsProcessor(private val context: Context) {
         }
     }
 
-    suspend fun playFileAudio(file: File, volume: Float): Unit = withContext(Dispatchers.Main) {
-        suspendCoroutine<Unit> { continuation ->
+    suspend fun playFileAudio(file: File, volume: Float): Boolean = withContext(Dispatchers.Main) {
+        suspendCoroutine { continuation ->
             try {
                 val attrs = AudioAttributes.Builder()
                     .setUsage(AudioAttributes.USAGE_MEDIA)
                     .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
                     .build()
-
                 val player = MediaPlayer()
-                player.setAudioAttributes(attrs)  // ← AVANT setDataSource
+                player.setAudioAttributes(attrs)
                 player.setDataSource(file.absolutePath)
                 player.prepare()
                 player.setVolume(volume, volume)
-                player.setOnCompletionListener { mp -> mp.release(); continuation.resume(Unit) }
+                player.setOnCompletionListener { mp -> mp.release(); continuation.resume(true) }
                 player.setOnErrorListener { mp, what, extra ->
                     Log.e(tag, "MediaPlayer fichier erreur what=$what extra=$extra")
-                    mp.release(); continuation.resume(Unit); true
+                    mp.release(); continuation.resume(false); true
                 }
                 player.start()
             } catch (e: Exception) {
                 Log.e(tag, "Erreur lecture fichier : ${e.message}")
-                continuation.resume(Unit)
+                continuation.resume(false)
             }
         }
     }

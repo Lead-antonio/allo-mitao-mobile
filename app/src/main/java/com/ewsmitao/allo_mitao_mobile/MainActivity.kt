@@ -58,6 +58,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         requestRequiredPermissions() // Demande les permissions SMS + notifications + stockage
         createAudioDirectory()
+        createAckNotificationChannel()
         startNetworkService()        // Lance le service HTTP en premier plan
 //        logAudioDevices()
 //        logUsbDevices()
@@ -291,5 +292,18 @@ class MainActivity : ComponentActivity() {
         }
 
         if (needed.isNotEmpty()) permissionLauncher.launch(needed.toTypedArray())
+    }
+
+
+    private fun createAckNotificationChannel() {
+            val channel = android.app.NotificationChannel(
+                "playback_ack_channel",
+                "Accusés de diffusion",
+                android.app.NotificationManager.IMPORTANCE_LOW
+            ).apply {
+                description = "Confirmation d'envoi des accusés de lecture vers le serveur"
+            }
+            val manager = getSystemService(Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
+            manager.createNotificationChannel(channel)
     }
 }

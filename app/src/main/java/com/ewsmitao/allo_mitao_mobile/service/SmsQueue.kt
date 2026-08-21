@@ -38,6 +38,7 @@ object SmsQueue {
         val intervalleMin:  Long,
         val boucleActuelle: Int,
         val audioPath:      String,
+        val notifId:        Long? = null,
         val scheduledTime:  LocalDateTime? = null
     ) : Comparable<SmsCommand> {
 
@@ -195,7 +196,7 @@ object SmsQueue {
      */
     private fun parseCommand(context: Context, sender: String, raw: String): SmsCommand? {
         val parts = raw.trim().split("\\s+".toRegex())
-        if (parts.size < 4) {
+        if (parts.size < 5) {
             Log.w(TAG, "Format commande invalide (besoin d'au moins 4 champs) : $raw")
             return null
         }
@@ -205,8 +206,9 @@ object SmsQueue {
         val intervalleMin = SmsProcessor(context).parseIntervalle(parts[2])
         val priorityStr   = parts[3].uppercase()
         val priority      = if (priorityStr == "P1") 1 else 2
+        val notifId       = parts[4].toLongOrNull()
 
-        val scheduledTime: LocalDateTime? = parts.getOrNull(4)?.let { dateStr ->
+        val scheduledTime: LocalDateTime? = parts.getOrNull(5)?.let { dateStr ->
             try {
                 LocalDateTime.parse(dateStr, FORMATTER)
             } catch (e: Exception) {
@@ -237,6 +239,7 @@ object SmsQueue {
             intervalleMin  = intervalleMin,
             boucleActuelle = 1,
             audioPath      = audioPath,
+            notifId = notifId,
             scheduledTime  = scheduledTime
         )
     }

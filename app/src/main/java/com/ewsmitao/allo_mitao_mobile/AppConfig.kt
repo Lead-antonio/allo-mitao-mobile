@@ -7,6 +7,9 @@ object AppConfig {
     const val BASE_URL_PREPROD = "https://sirene.manager.preprod.mitao-forecast.com/backend_sirene_preprod"
     const val BASE_URL_PROD = "https://mitao-forecast.com/backend"
 
+    const val PLAYBACK_ACK_URL = "$BASE_URL_PREPROD/send-alerte-bngrc" // + "/{id}/ack"
+    const val PLAYBACK_ACK_URL_ANN = "$BASE_URL_PREPROD/notifications"
+
     const val DEVICE_REGISTER_ENDPOINT = "$BASE_URL_PREPROD/sirenes/register"
     // Timeouts (ms)
     const val CONNECT_TIMEOUT = 10_000
